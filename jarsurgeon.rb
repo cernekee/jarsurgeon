@@ -16,7 +16,7 @@ def status(tag, msg)
   end
 end
 
-def quiet_exec(cmd, abort_on_error, tag = "[cmd]", msg = "Fatal error")
+def quiet_exec(cmd, abort_on_error, tag = "[cmd]", msg = nil)
   output = ""
   begin
     output = `#{cmd}`
@@ -27,7 +27,7 @@ def quiet_exec(cmd, abort_on_error, tag = "[cmd]", msg = "Fatal error")
     output.split("\n").each do |line|
       puts "[#{tag}] #{line}"
     end
-    abort msg
+    abort msg.nil? ? "Fatal error running #{cmd}" : msg
   end
   return false
 end
