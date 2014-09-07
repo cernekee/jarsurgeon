@@ -1,0 +1,385 @@
+#!/usr/bin/ruby -w
+
+# jarsurgeon.rb - instrument and rebuild Java programs without source code
+# Copyright (c) 2014 Kevin Cernekee <cernekee@gmail.com>
+# License: MIT.  See LICENSE in the source distribution for terms.
+
+require "zip"
+require "optparse"
+require "fileutils"
+
+$loglevel = 1
+
+def status(tag, msg)
+  if $loglevel >= 1
+    puts "  %-9s %s" % [tag, msg]
+  end
+end
+
+def quiet_exec(cmd, abort_on_error, tag = "[cmd]", msg = "Fatal error")
+  output = ""
+  begin
+    output = `#{cmd}`
+    return true if $?.exitstatus == 0
+  rescue
+  end
+  if abort_on_error
+    output.split("\n").each do |line|
+      puts "[#{tag}] #{line}"
+    end
+    abort msg
+  end
+  return false
+end
+
+class Krakatau
+
+  attr_reader :asm_prog
+
+  def initialize
+    @disasm_prog = findprog("disassemble.py")
+    @asm_prog = findprog("assemble.py")
+  end
+
+  def findprog(prog)
+    binary = prog
+    if !ENV['KRAKATAU_HOME'].nil?
+      binary = File.join(ENV['KRAKATAU_HOME'], binary)
+    end
+
+    # as shipped, disassemble.py isn't executable and doesn't start with
+    # "#!/usr/bin/env python".  But if there happens to be a working
+    # version in your PATH, we'll happily use it.
+    return binary if quiet_exec("#{binary} -h", false)
+
+    # ...otherwise we'll need to run "python $KRAKATAU_HOME/disassemble.py"
+    binary = "python #{binary}"
+    return binary if quiet_exec("#{binary} -h", false)
+
+    abort "Can't execute #{prog}; try setting $KRAKATAU_HOME"
+  end
+
+  def asm_options(dirname, file)
+    return "-out '#{dirname}' -q '#{file}'"
+  end
+
+  def disassemble_one(dir, file)
+    olddir = Dir.getwd
+    Dir.chdir(dir)
+    quiet_exec("#{@disasm_prog} '#{file}'",
+      true, "krakatau", "Error disassembling #{file}")
+    Dir.chdir(olddir)
+  end
+
+end
+
+class Javap
+
+  def initialize
+    if !ENV['JAVA_HOME'].nil?
+      java_bindir = File.join(ENV['JAVA_HOME'], "bin")
+      @disasm_prog = File.join(java_bindir, "javap")
+      return if quiet_exec("#{@disasm_prog} -help", false)
+    end
+
+    @disasm_prog = "javap"
+    quiet_exec("#{@disasm_prog} -help", true, "[javap]",
+      "Can't find a working javap binary")
+  end
+
+  def asm_prog
+    # not implemented - disassembly only
+    return "false"
+  end
+
+  def asm_options(dirname, file)
+    return ""
+  end
+
+  def disassemble_one(dir, file)
+    olddir = Dir.getwd
+    Dir.chdir(dir)
+    prefix = file.sub(".class", "")
+    quiet_exec("#{@disasm_prog} -c -l -private -s -verbose '#{prefix}' > #{prefix}.jasm",
+      true, "disasm", "Error disassembling #{file}")
+    Dir.chdir(olddir)
+  end
+
+end
+
+class Extractor
+  attr_reader :classfiles
+  attr_reader :otherfiles
+  attr_reader :manifest
+
+  def initialize(disasm)
+    @disasm = disasm
+    @classfiles = [ ]
+    @otherfiles = [ ]
+    @manifest = ""
+  end
+
+  def process(jarfile, dirname)
+    Zip.on_exists_proc = true
+    Zip::File.open(jarfile) do |zf|
+      zf.each do |entry|
+        next if !entry.file_type_is?(:file)
+
+        src = entry.name
+        dst = File.join(dirname, src)
+        FileUtils.mkdir_p(File.dirname(dst))
+        entry.extract(dst)
+
+        if /\.class$/.match(src)
+          status("DISASM", src)
+          @classfiles.push(src)
+          @disasm.disassemble_one(dirname, src)
+          File.unlink(dst)
+        elsif src == "META-INF/MANIFEST.MF"
+          status("COPY", src)
+          @manifest = src
+        elsif /^META-INF.*\.(SF)|(DSA)$/.match(src)
+          # signature files - we'll copy them but the hashes won't match, so
+          # they don't get included in new.jar
+          status("COPY[s]", src)
+        else
+          status("COPY", src)
+          @otherfiles.push(src)
+        end
+      end
+    end
+  end
+
+end
+
+class Inst
+  attr_reader :classfiles
+
+  INSTDIR = "inst"
+
+  def initialize
+    if ENV['JARSURGEON_INST'].nil?
+      abort "Please set $JARSURGEON_INST or use the '-n' option"
+    end
+
+    @srcfiles = ENV['JARSURGEON_INST'].split
+    @srcfiles.each do |file|
+      if !File.exists?(file)
+        abort "Unable to read '#{file} listed in JARSURGEON_INST"
+      end
+    end
+  end
+
+  def install(dirname)
+    @classfiles = [ ]
+    @srcfiles.each do |file|
+      relname = File.join(INSTDIR, File.basename(file))
+      @classfiles.push(relname.sub(".java", ".class"))
+
+      status("COPY", relname)
+      dir = File.join(dirname, INSTDIR)
+      FileUtils.mkdir_p(dir)
+      FileUtils.cp(file, dir)
+    end
+  end
+
+end
+
+class Makegen
+
+  def sanitize(str)
+    return str.gsub("$", "$$").gsub("\\", "\\\\")
+  end
+
+  def list_to_var(varname, list)
+    if list.length == 0
+      return "#{varname} :="
+    end
+
+    out = "#{varname} := \\\n"
+    last = list.pop
+    list.each { |x| out += "\t#{sanitize(x)} \\\n" }
+    out += "\t#{sanitize(last)}"
+
+    return out
+  end
+
+  def write(dirname, disasm, ex, instfiles)
+    open(File.join(dirname, "Makefile"), "w") do |f|
+      f.write <<EOF
+
+# Autogenerated by #{$0} on #{Time.new.to_s}
+
+ASM\t:= #{disasm.asm_prog}
+JAVAC\t:= javac
+JAR\t:= jar
+OBJDIR\t:= obj
+
+#{list_to_var("ORIG_OBJS", ex.classfiles)}
+
+#{list_to_var("INST_OBJS", instfiles)}
+
+BUILT_ORIG_OBJS := $(addprefix $(OBJDIR)/,$(ORIG_OBJS))
+BUILT_INST_OBJS := $(addprefix $(OBJDIR)/,$(INST_OBJS))
+
+MANIFEST := #{ex.manifest}
+
+#{list_to_var("OTHER_FILES", ex.otherfiles)}
+
+V := 0
+ifneq ($(V),1)
+Q := @
+endif
+
+# note: $(MANIFEST) must come first
+new.jar: $(MANIFEST) $(OTHER_FILES) $(BUILT_ORIG_OBJS) $(BUILT_INST_OBJS)
+\t@echo "  JAR    $@"
+\t$(Q)$(JAR) cfm $@ $(MANIFEST) $(OTHER_FILES) -C $(OBJDIR) .
+
+$(OBJDIR):
+\t@echo "  MKDIR  $@"
+\t$(Q)mkdir $(OBJDIR)
+
+$(BUILT_ORIG_OBJS): $(OBJDIR)/%.class: %.j $(OBJDIR) Makefile
+\t@echo "  ASM    $@"
+\t$(Q)$(ASM) #{disasm.asm_options("$(OBJDIR)", "$<")}
+
+$(BUILT_INST_OBJS): $(OBJDIR)/%.class: %.java $(OBJDIR) Makefile
+\t@echo "  JAVAC  $@"
+\t$(Q)$(JAVAC) -d $(OBJDIR) '$<'
+
+.PHONY: clean
+clean:
+\t@echo "  CLEAN"
+\t$(Q)rm -rf $(OBJDIR)
+EOF
+    end
+  end
+
+end
+
+class Args
+
+  attr_reader :do_inst
+  attr_reader :do_git
+  attr_reader :dirname
+  attr_reader :do_force
+  attr_reader :jarfile
+  attr_reader :use_javap
+
+  def initialize
+    @do_inst = true
+    @do_git = false
+    @dirname = nil
+    @do_force = false
+    @use_javap = false
+
+    OptionParser.new do |opts|
+      opts.banner = "usage: #{$0} [options] <jarfile>"
+
+      opts.on("-n", "--no-instrument", "Do not add inst/* classes") do
+        @do_inst = false
+      end
+
+      opts.on("-g", "--git", "Initialize as a git repository") do
+        @do_git = true
+      end
+
+      opts.on("-d", "--directory DIRNAME", "Extract into DIRNAME") do |arg|
+        @dirname = arg
+      end
+
+      opts.on("-q", "--quiet", "Limit output to warnings/errors only") do
+        $loglevel = 0
+      end
+
+      opts.on("-f", "--force", "Overwrite any existing files") do
+        @do_force = true
+      end
+
+      opts.on("--javap", "Use javap instead of Krakatau") do
+        @use_javap = true
+      end
+
+      opts.on_tail("-h", "--help", "Show this message") do
+        puts opts
+        exit
+      end
+    end.parse!
+
+    if ARGV.length == 0
+      abort "Missing jarfile name (use '#{$0} -h' for help)"
+    elsif ARGV.length > 1
+      abort "Too many arguments (use '#{$0} -h' for help)"
+    end
+
+    @jarfile = ARGV[0]
+  end
+
+end
+
+def setup_git(jarfile, dirname)
+  olddir = Dir.getwd
+  Dir.chdir(dirname)
+
+  open(".gitignore", "w") do |f|
+    f.write <<EOF
+obj/
+new.jar
+.*.sw*
+*~
+EOF
+  end
+
+  status("GIT", dirname)
+  FileUtils.rm_rf(".git")
+  quiet_exec("git init .", true, "git")
+  quiet_exec("git add .", true, "git")
+  quiet_exec("git commit -qsm 'Initial commit of #{jarfile}'", true, "git")
+  Dir.chdir(olddir)
+end
+
+#
+# MAIN
+#
+
+args = Args.new
+
+jarfile = args.jarfile
+dirname = args.dirname
+
+if dirname.nil?
+  m = /(.+)\.jar$/i.match(jarfile)
+  if m.nil?
+    abort "Input filename must end with .jar"
+  end
+  dirname = File.basename(m.captures[0])
+end
+
+if File.directory?(dirname)
+  if !args.do_force
+    abort "#{dirname} already exists; use -f to overwrite contents"
+  end
+else
+  Dir.mkdir(dirname)
+end
+
+inst = Inst.new if args.do_inst
+disasm = args.use_javap ? Javap.new : Krakatau.new
+ex = Extractor.new(disasm)
+ex.process(jarfile, dirname)
+
+if args.do_inst
+  inst.install(dirname)
+  instfiles = inst.classfiles
+else
+  instfiles = [ ]
+end
+
+Makegen.new.write(dirname, disasm, ex, instfiles)
+
+if args.do_git
+  setup_git(jarfile, dirname)
+end
+
+exit 0
