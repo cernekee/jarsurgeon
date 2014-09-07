@@ -233,24 +233,24 @@ endif
 
 # note: $(MANIFEST) must come first
 new.jar: $(MANIFEST) $(OTHER_FILES) $(BUILT_ORIG_OBJS) $(BUILT_INST_OBJS)
-\t@echo "  JAR    $@"
+\t@echo '  JAR    $@'
 \t$(Q)$(JAR) cfm $@ $(MANIFEST) $(OTHER_FILES) -C $(OBJDIR) .
 
 $(OBJDIR):
-\t@echo "  MKDIR  $@"
+\t@echo '  MKDIR  $@'
 \t$(Q)mkdir $(OBJDIR)
 
 $(BUILT_ORIG_OBJS): $(OBJDIR)/%.class: %.j $(OBJDIR) Makefile
-\t@echo "  ASM    $@"
+\t@echo '  ASM    $@'
 \t$(Q)$(ASM) #{disasm.asm_options("$(OBJDIR)", "$<")}
 
 $(BUILT_INST_OBJS): $(OBJDIR)/%.class: %.java $(OBJDIR) Makefile
-\t@echo "  JAVAC  $@"
+\t@echo '  JAVAC  $@'
 \t$(Q)$(JAVAC) -d $(OBJDIR) '$<'
 
 .PHONY: clean
 clean:
-\t@echo "  CLEAN"
+\t@echo '  CLEAN'
 \t$(Q)rm -rf $(OBJDIR)
 EOF
     end
