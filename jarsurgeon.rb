@@ -240,11 +240,11 @@ $(OBJDIR):
 \t@echo '  MKDIR  $@'
 \t$(Q)mkdir $(OBJDIR)
 
-$(BUILT_ORIG_OBJS): $(OBJDIR)/%.class: %.j $(OBJDIR) Makefile
+$(BUILT_ORIG_OBJS): $(OBJDIR)/%.class: %.j Makefile | $(OBJDIR)
 \t@echo '  ASM    $@'
 \t$(Q)$(ASM) #{disasm.asm_options("$(OBJDIR)", "$<")}
 
-$(BUILT_INST_OBJS): $(OBJDIR)/%.class: %.java $(OBJDIR) Makefile
+$(BUILT_INST_OBJS): $(OBJDIR)/%.class: %.java Makefile | $(OBJDIR)
 \t@echo '  JAVAC  $@'
 \t$(Q)$(JAVAC) -d $(OBJDIR) '$<'
 
