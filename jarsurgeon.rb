@@ -53,6 +53,9 @@ class Krakatau
     return binary if quiet_exec("#{binary} -h", false)
 
     # ...otherwise we'll need to run "python $KRAKATAU_HOME/disassemble.py"
+    binary = "python2 #{binary}"
+    return binary if quiet_exec("#{binary} -h", false)
+
     binary = "python #{binary}"
     return binary if quiet_exec("#{binary} -h", false)
 
