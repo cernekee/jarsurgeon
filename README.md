@@ -9,7 +9,9 @@ editor, adding debug prints or modifying the program's behavior.
 
 Unlike most Java decompiler output, the human-readable bytecode files used by
 Krakatau/jarsurgeon can usually be converted back into fully functional
-Java binaries, even for complex applications.
+Java binaries, even for complex applications.  Displaying intermediate
+values, function arguments, and other internal data can significantly speed
+up the analysis of undocumented code.
 
 ## Prerequisites
 
@@ -46,6 +48,9 @@ We can unpack the JAR and add a debug print:
     $ make
       ASM    obj/com/example/Test.class
       JAR    new.jar
+
+(We used --git to initialize app/ as its own git repository, making it easy
+to track and revert changes to the bytecode.)
 
 Executing the new JAR, we see the result:
 
