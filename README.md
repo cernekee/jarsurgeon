@@ -11,6 +11,12 @@ Unlike most Java decompiler output, the human-readable bytecode files used by
 Krakatau/jarsurgeon can usually be converted back into fully functional
 Java binaries, even for complex applications.
 
+## Prerequisites
+
+* Ruby 1.9.3 or above.  Instructions for upgrading ruby on old Ubuntu
+systems can be found [here](http://brightbox.com/docs/ruby/ubuntu/).
+* The [rubyzip](https://rubygems.org/gems/rubyzip) gem
+
 ## Sample usage
 
 First, clone the necessary source repos, and set up some environment
