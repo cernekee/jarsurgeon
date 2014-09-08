@@ -1,0 +1,31 @@
+From b63ec7d2e79a5230c1b5adccb650cc522a83096b Mon Sep 17 00:00:00 2001
+From: Kevin Cernekee <cernekee@gmail.com>
+Date: Sun, 7 Sep 2014 18:23:28 -0700
+Subject: [PATCH] main: Add 'number of args' instrumentation
+
+Signed-off-by: Kevin Cernekee <cernekee@gmail.com>
+---
+ com/example/Test.j |    7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/com/example/Test.j b/com/example/Test.j
+index adbcfbc..fc28c66 100644
+--- a/com/example/Test.j
++++ b/com/example/Test.j
+@@ -16,6 +16,13 @@
+ 	; method code size: 9 bytes
+ 	.limit stack 2
+ 	.limit locals 1
++
++	aload_0
++	arraylength
++	ldc 'Number of args passed to main: '
++	swap
++	invokestatic inst/Inst printint (Ljava/lang/String;I)V
++
+ 	getstatic java/lang/System out Ljava/io/PrintStream;
+ 	ldc 'hello world'
+ 	invokevirtual java/io/PrintStream println (Ljava/lang/String;)V
+-- 
+1.7.9.5
+
