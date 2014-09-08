@@ -1,0 +1,25 @@
+<project name="Test" default="build" basedir=".">
+
+	<property name="build" location="build"/>
+	<property name="src"   location="src"/>
+	<property name="jarname" location="app.jar"/>
+
+	<target name="init">
+		<mkdir dir="${build}"/>
+	</target>
+
+	<target name="build" depends="init">
+		<javac srcdir="src" destdir="${build}"
+		       includeantruntime="false"/>
+		<jar jarfile="${jarname}" basedir="${build}">
+			<manifest>
+				<attribute name="Main-Class" value="com.example.Test" />
+			</manifest>
+		</jar>
+	</target>
+
+	<target name="clean">
+		<delete dir="${build}"/>
+		<delete file="${jarname}"/>
+	</target>
+</project>
