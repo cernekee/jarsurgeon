@@ -65,6 +65,8 @@ each Inst.java function, use:
 
     javap -public -s obj/inst/Inst
 
+jarsurgeon.rb can be copied to any directory in your PATH, if desired.
+
 ## Licensing
 
 jarsurgeon is distributed under the MIT License.
