@@ -17,7 +17,10 @@ up the analysis of undocumented code.
 
 * Ruby 1.9.3 or above.  Instructions for upgrading ruby on old Ubuntu
 systems can be found [here](http://brightbox.com/docs/ruby/ubuntu/).
-* The [rubyzip](https://rubygems.org/gems/rubyzip) gem
+* The [rubyzip](https://rubygems.org/gems/rubyzip) gem.
+* Krakatau requires Python 2.x (will not run with &gt;= 3.x).
+* Krakatau also requires the [ply](https://pypi.python.org/pypi/ply)
+parser package.
 
 ## Sample usage
 
@@ -49,7 +52,7 @@ We can unpack the JAR and add a debug print:
       ASM    obj/com/example/Test.class
       JAR    new.jar
 
-(We used --git to initialize app/ as its own git repository, making it easy
+(The --git flag initializes app/ as its own git repository, making it easy
 to track and revert changes to the bytecode.)
 
 Executing the new JAR, we see the result:
@@ -65,7 +68,27 @@ each Inst.java function, use:
 
     javap -public -s obj/inst/Inst
 
+By default, Inst.java prepends ';' to each output line, making it easy to
+cut and paste them as comments back into the .j files.
+
 jarsurgeon.rb can be copied to any directory in your PATH, if desired.
+
+## Security notes
+
+It is assumed that the input files do not contain malicious content, such
+as:
+
+* Filenames containing "../../../", shell/make metacharacters, spaces, etc.
+* Malformed .class files intended to break Krakatau
+* [Zip bombs](https://en.wikipedia.org/wiki/Zip_bomb)
+
+If this tool is being used to reverse-engineer malware, it should probably
+be run in a VM.
+
+Signed JAR files can be unpacked, but executing rebuilt versions may involve
+reconfiguring or modifying your Java runtime environment.  The .SF and .DSA
+files are automatically omitted from new.jar so that "jarsigner -verify"
+doesn't report a bad signature.
 
 ## Licensing
 
